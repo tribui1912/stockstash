@@ -49,10 +49,31 @@ class _CabinetsPageState extends State<CabinetsPage> {
   }
 
   void _removeCabinet(Cabinet cabinet) async {
-    await dbHelper.removeCabinet(cabinet.id);
-    setState(() {
-      _cabinets.remove(cabinet);
-    });
+    final result = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete ${cabinet.name}?'),
+        content: Text("Are you sure you want to remove, this action cannot be reverted?"),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context, 'Cancel');
+            },
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context, 'Delete');
+              await dbHelper.removeCabinet(cabinet.id);
+              setState(() {
+                _cabinets.remove(cabinet);
+              });
+            },
+            child: Text('Delete'),
+          ),
+        ],
+      )
+      );
   }
 
   @override
@@ -61,7 +82,15 @@ class _CabinetsPageState extends State<CabinetsPage> {
       appBar: AppBar(
         leading: Icon(Icons.warehouse),
         title: const Text('StockStash'),
-        backgroundColor: Colors.blueAccent[200],
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.blue[400]!, Colors.blue[50]!],
+            ),
+          ),
+        ),
       ),
       body: ListView(
         children: [
