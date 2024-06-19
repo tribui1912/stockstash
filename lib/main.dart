@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'database_helper.dart';
 
 void main() {
   runApp(const CabinetsApp());
@@ -10,9 +11,6 @@ class CabinetsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
       home: const CabinetsPage(),
     );
   }
@@ -26,57 +24,50 @@ class CabinetsPage extends StatefulWidget {
 }
 
 class _CabinetsPageState extends State<CabinetsPage> {
+  final DatabaseHelper dbHelper = DatabaseHelper();
   final List<Cabinet> _cabinets = [];
 
-  void _addCabinet(Cabinet cabinet) {
+  @override
+  void initState() {
+    super.initState();
+    _loadCabinets();
+  }
+
+  void _loadCabinets() async {
+    List<Cabinet> cabinets = await dbHelper.getCabinets();
     setState(() {
-      _cabinets.add(cabinet);
+      _cabinets.addAll(cabinets);
+    });
+  }
+
+  void _addCabinet(Cabinet cabinet) async {
+    int id = await dbHelper.insertCabinet(cabinet);
+    print('Inserted cabinet with ID: $id');
+    setState(() {
+      _cabinets.add(Cabinet(id, cabinet.name));
     });
   }
 
   void _removeCabinet(Cabinet cabinet) async {
-    final result = await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Cabinet'),
-        content: const Text('Are you sure you want to delete this cabinet?'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context, false);
-            },
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context, true);
-            },
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (result == true) {
-      setState(() {
-        _cabinets.remove(cabinet);
-      });
-    }
+    await dbHelper.removeCabinet(cabinet.id);
+    setState(() {
+      _cabinets.remove(cabinet);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: Icon(Icons.warehouse),
         title: const Text('StockStash'),
+        backgroundColor: Colors.blueAccent[200],
       ),
       body: ListView(
         children: [
           for (var cabinet in _cabinets)
             ListTile(
-              title: Text(
-                cabinet.name,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
+              title: Text(cabinet.name),
               onTap: () {
                 Navigator.push(
                   context,
@@ -110,17 +101,19 @@ class _CabinetsPageState extends State<CabinetsPage> {
 }
 
 class Cabinet {
+  final int id;
   final String name;
   final List<Item> items = [];
 
-  Cabinet(this.name);
+  Cabinet(this.id, this.name);
 }
 
 class Item {
+  final int id;
   final String name;
   int count;
 
-  Item(this.name, this.count);
+  Item(this.id, this.name, this.count);
 }
 
 class ItemsPage extends StatefulWidget {
@@ -133,23 +126,30 @@ class ItemsPage extends StatefulWidget {
 }
 
 class _ItemsPageState extends State<ItemsPage> {
-  void _addItem(String name, int count) {
+  final DatabaseHelper dbHelper = DatabaseHelper();
+
+  void _addItem(String name, int count) async {
+    Item item = Item(0, name, count);
+    int id = await dbHelper.insertItem(item, widget.cabinet.id);
+    print('Added item with ID: $id, name: ${item.name}, count: ${item.count}');
     setState(() {
-      widget.cabinet.items.add(Item(name, count));
+      widget.cabinet.items.add(Item(id, name, count));
     });
   }
 
-  void _removeItem(Item item) {
+  void _removeItem(Item item) async {
+    await dbHelper.removeItem(item.id);
     setState(() {
       widget.cabinet.items.remove(item);
     });
   }
 
-  void _updateItemCount(Item item, int delta) {
+  void _updateItemCount(Item item, int delta) async {
+    await dbHelper.updateItemCount(item, delta);
     setState(() {
       item.count += delta;
       if (item.count <= 0) {
-        _removeItem(item);
+        widget.cabinet.items.remove(item);
       }
     });
   }
@@ -164,10 +164,7 @@ class _ItemsPageState extends State<ItemsPage> {
         children: [
           for (var item in widget.cabinet.items)
             ListTile(
-              title: Text(
-                item.name,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
+              title: Text(item.name),
               subtitle: Text('${item.count}'),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -228,7 +225,7 @@ class AddCabinetDialog extends StatelessWidget {
         ),
         TextButton(
           onPressed: () {
-            onAdd(Cabinet(nameController.text));
+            onAdd(Cabinet(0, nameController.text));
             Navigator.pop(context);
           },
           child: const Text('Add'),
@@ -280,9 +277,5 @@ class AddItemDialog extends StatelessWidget {
         ),
       ],
     );
-
+  }
 }
-}
-
-
-
