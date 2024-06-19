@@ -10,9 +10,6 @@ class CabinetsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
       home: const CabinetsPage(),
     );
   }
@@ -34,33 +31,10 @@ class _CabinetsPageState extends State<CabinetsPage> {
     });
   }
 
-  void _removeCabinet(Cabinet cabinet) async {
-    final result = await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Cabinet'),
-        content: const Text('Are you sure you want to delete this cabinet?'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context, false);
-            },
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context, true);
-            },
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (result == true) {
-      setState(() {
-        _cabinets.remove(cabinet);
-      });
-    }
+  void _removeCabinet(Cabinet cabinet) {
+    setState(() {
+      _cabinets.remove(cabinet);
+    });
   }
 
   @override
@@ -73,10 +47,7 @@ class _CabinetsPageState extends State<CabinetsPage> {
         children: [
           for (var cabinet in _cabinets)
             ListTile(
-              title: Text(
-                cabinet.name,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
+              title: Text(cabinet.name),
               onTap: () {
                 Navigator.push(
                   context,
@@ -164,11 +135,8 @@ class _ItemsPageState extends State<ItemsPage> {
         children: [
           for (var item in widget.cabinet.items)
             ListTile(
-              title: Text(
-                item.name,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text('${item.count}'),
+              title: Text(item.name),
+              subtitle: Text('$item.count'),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -280,9 +248,5 @@ class AddItemDialog extends StatelessWidget {
         ),
       ],
     );
-
+  }
 }
-}
-
-
-
