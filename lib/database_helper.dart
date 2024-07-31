@@ -8,7 +8,7 @@ class DatabaseHelper {
   factory DatabaseHelper() => _instance;
   DatabaseHelper._internal();
   
-  static Database? _database;
+  Database? _database;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -21,57 +21,42 @@ class DatabaseHelper {
     return openDatabase(
       path,
       onCreate: (db, version) async {
-        await _createTables(db);
+        await db.execute(
+          '''
+          CREATE TABLE cabinets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            data TEXT
+          )
+          '''
+        );
+        await db.execute(
+          '''
+          CREATE TABLE items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            count INTEGER,
+            cabinet_id INTEGER,
+            FOREIGN KEY (cabinet_id) REFERENCES cabinets (id)
+          )
+          '''
+        );
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        await _upgradeTables(db, oldVersion, newVersion);
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE cabinets ADD COLUMN data TEXT');
+        }
       },
-      version: 4,
+      version: 3,
     );
   }
 
-  Future<void> _createTables(Database db) async {
-    await db.execute('''
-      CREATE TABLE cabinets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        data TEXT
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        count INTEGER,
-        cabinet_id INTEGER,
-        FOREIGN KEY (cabinet_id) REFERENCES cabinets (id)
-      )
-    ''');
-  }
-
-  Future<void> _upgradeTables(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 4) {
-      // Check if 'data' column exists
-      var columns = await db.rawQuery('PRAGMA table_info(cabinets)');
-      bool dataColumnExists = columns.any((column) => column['name'] == 'data');
-      
-      if (!dataColumnExists) {
-        await db.execute('ALTER TABLE cabinets ADD COLUMN data TEXT');
-      }
-    }
-  }
-
   Future<int> insertCabinet(Cabinet cabinet) async {
-    try {
-      final db = await database;
-      return await db.insert('cabinets', {
-        'name': cabinet.name,
-        'data': cabinet.data,
-      });
-    } catch (e) {
-      print('Error inserting cabinet: $e');
-      rethrow;
-    }
+    final db = await database;
+    return await db.insert('cabinets', {
+      'name': cabinet.name,
+      'data': cabinet.data,
+    });
   }
 
   Future<int> insertItem(Item item, int cabinetId) async {
@@ -97,7 +82,7 @@ class DatabaseHelper {
       List<Item> items = itemMaps
           .map((itemMap) => Item(itemMap['id'], itemMap['name'], itemMap['count']))
           .toList();
-      Cabinet cabinet = Cabinet(map['id'], map['name'], map['data'] ?? '');
+      Cabinet cabinet = Cabinet(map['id'], map['name'], map['data']);
       cabinet.items.addAll(items);
       cabinets.add(cabinet);
     }
