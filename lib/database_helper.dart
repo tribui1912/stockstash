@@ -8,7 +8,7 @@ class DatabaseHelper {
   factory DatabaseHelper() => _instance;
   DatabaseHelper._internal();
   
-  Database? _database;
+  static Database? _database;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -21,38 +21,66 @@ class DatabaseHelper {
     return openDatabase(
       path,
       onCreate: (db, version) async {
-        await db.execute(
-          '''
-          CREATE TABLE cabinets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT
-          )
-          '''
-        );
-        await db.execute(
-          '''
-          CREATE TABLE items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            count INTEGER,
-            cabinet_id INTEGER,
-            FOREIGN KEY (cabinet_id) REFERENCES cabinets (id)
-          )
-          '''
-        );
+        await _createTables(db);
       },
-      version: 1,
+      onUpgrade: (db, oldVersion, newVersion) async {
+        await _upgradeTables(db, oldVersion, newVersion);
+      },
+      version: 4,
     );
   }
 
+  Future<void> _createTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE cabinets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        data TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        count INTEGER,
+        cabinet_id INTEGER,
+        FOREIGN KEY (cabinet_id) REFERENCES cabinets (id)
+      )
+    ''');
+  }
+
+  Future<void> _upgradeTables(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 4) {
+      // Check if 'data' column exists
+      var columns = await db.rawQuery('PRAGMA table_info(cabinets)');
+      bool dataColumnExists = columns.any((column) => column['name'] == 'data');
+      
+      if (!dataColumnExists) {
+        await db.execute('ALTER TABLE cabinets ADD COLUMN data TEXT');
+      }
+    }
+  }
+
   Future<int> insertCabinet(Cabinet cabinet) async {
-    final db = await database;
-    return await db.insert('cabinets', {'name': cabinet.name});
+    try {
+      final db = await database;
+      return await db.insert('cabinets', {
+        'name': cabinet.name,
+        'data': cabinet.data,
+      });
+    } catch (e) {
+      print('Error inserting cabinet: $e');
+      rethrow;
+    }
   }
 
   Future<int> insertItem(Item item, int cabinetId) async {
     final db = await database;
-    return await db.insert('items', {'name': item.name, 'count': item.count, 'cabinet_id': cabinetId});
+    return await db.insert('items', {
+      'name': item.name,
+      'count': item.count,
+      'cabinet_id': cabinetId,
+    });
   }
 
   Future<List<Cabinet>> getCabinets() async {
@@ -61,9 +89,16 @@ class DatabaseHelper {
 
     List<Cabinet> cabinets = [];
     for (var map in maps) {
-      List<Map<String, dynamic>> itemMaps = await db.query('items', where: 'cabinet_id = ?', whereArgs: [map['id']]);
-      List<Item> items = itemMaps.map((itemMap) => Item(itemMap['id'], itemMap['name'], itemMap['count'])).toList();
-      Cabinet cabinet = Cabinet(map['id'], map['name'])..items.addAll(items);
+      List<Map<String, dynamic>> itemMaps = await db.query(
+        'items',
+        where: 'cabinet_id = ?',
+        whereArgs: [map['id']],
+      );
+      List<Item> items = itemMaps
+          .map((itemMap) => Item(itemMap['id'], itemMap['name'], itemMap['count']))
+          .toList();
+      Cabinet cabinet = Cabinet(map['id'], map['name'], map['data'] ?? '');
+      cabinet.items.addAll(items);
       cabinets.add(cabinet);
     }
     return cabinets;
@@ -75,7 +110,12 @@ class DatabaseHelper {
     if (newCount <= 0) {
       return await db.delete('items', where: 'id = ?', whereArgs: [item.id]);
     } else {
-      return await db.update('items', {'count': newCount}, where: 'id = ?', whereArgs: [item.id]);
+      return await db.update(
+        'items',
+        {'count': newCount},
+        where: 'id = ?',
+        whereArgs: [item.id],
+      );
     }
   }
 

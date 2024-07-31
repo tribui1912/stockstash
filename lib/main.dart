@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'database_helper.dart';
+import 'package:nfc_manager/nfc_manager.dart';
+import 'dart:math';
 
 void main() {
   runApp(const CabinetsApp());
@@ -11,9 +13,112 @@ class CabinetsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: const CabinetsPage(),
+      home: const MainMenu(),
     );
   }
+}
+
+class MainMenu extends StatelessWidget {
+  const MainMenu({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('StockStash'),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Main Menu',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => CabinetsPage()),
+                );
+              },
+              child: const Text('Go to Cabinets'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                _readNfcTag(context);
+              },
+              child: const Text('Read NFC Tag'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _readNfcTag(BuildContext context) async {
+    bool isAvailable = await NfcManager.instance.isAvailable();
+    if (!isAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('NFC is not available on this device')),
+      );
+      return;
+    }
+
+    NfcManager.instance.startSession(
+      onDiscovered: (NfcTag tag) async {
+        try {
+          NdefMessage? message = await Ndef.from(tag)?.read();
+          if (message != null && message.records.isNotEmpty) {
+            NdefRecord record = message.records.first;
+            String payload = String.fromCharCodes(record.payload).substring(3); // Remove language code
+            print("Read NFC Tag: $payload"); // Debug print
+            NfcManager.instance.stopSession();
+            _openCabinetWithKey(context, payload);
+          }
+        } catch (e) {
+          print("Error reading NFC tag: $e"); // Debug print
+          NfcManager.instance.stopSession(errorMessage: 'Failed to read NFC tag');
+        }
+      },
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Tap an NFC tag')),
+    );
+  }
+
+void _openCabinetWithKey(BuildContext context, String key) async {
+  DatabaseHelper dbHelper = DatabaseHelper();
+  List<Cabinet> cabinets = await dbHelper.getCabinets();
+  
+  print("NFC Tag Key: $key"); // Debug print
+  print("All Cabinets: ${cabinets.map((c) => '${c.id}: ${c.name} (${c.data})')}"); // Debug print
+
+  Cabinet? cabinetToOpen;
+  try {
+    cabinetToOpen = cabinets.firstWhere(
+      (cabinet) => cabinet.data == key,
+    );
+  } catch (e) {
+    cabinetToOpen = null;
+  }
+
+  if (cabinetToOpen != null) {
+    print("Opening cabinet: ${cabinetToOpen.id}: ${cabinetToOpen.name} (${cabinetToOpen.data})"); // Debug print
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ItemsPage(cabinet: cabinetToOpen!),
+      ),
+    );
+  } else {
+    print("No cabinet found with key: $key"); // Debug print
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('No cabinet found with this NFC tag')),
+    );
+  }
+}
 }
 
 class CabinetsPage extends StatefulWidget {
@@ -41,11 +146,84 @@ class _CabinetsPageState extends State<CabinetsPage> {
   }
 
   void _addCabinet(Cabinet cabinet) async {
-    int id = await dbHelper.insertCabinet(cabinet);
-    print('Inserted cabinet with ID: $id');
+    final random = Random();
+    String uniqueKey = '${DateTime.now().millisecondsSinceEpoch}-${random.nextInt(10000)}';
+    
+    Cabinet cabinetWithKey = Cabinet(0, cabinet.name, uniqueKey);
+    int id = await dbHelper.insertCabinet(cabinetWithKey);
+    print('Inserted cabinet with ID: $id, Unique Key: $uniqueKey');
     setState(() {
-      _cabinets.add(Cabinet(id, cabinet.name));
+      _cabinets.add(Cabinet(id, cabinet.name, uniqueKey));
     });
+
+    _offerNfcWrite(context, uniqueKey);
+  }
+
+  void _offerNfcWrite(BuildContext context, String key) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Write to NFC Tag'),
+          content: Text('Would you like to write the cabinet key to an NFC tag?'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('No'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Yes'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _writeNfcTag(context, key);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _writeNfcTag(BuildContext context, String key) async {
+    bool isAvailable = await NfcManager.instance.isAvailable();
+    if (!isAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('NFC is not available on this device')),
+      );
+      return;
+    }
+
+    NfcManager.instance.startSession(
+      onDiscovered: (NfcTag tag) async {
+        var ndef = Ndef.from(tag);
+        if (ndef == null) {
+          NfcManager.instance.stopSession(errorMessage: 'Tag is not NDEF compatible');
+          return;
+        }
+
+        NdefMessage message = NdefMessage([
+          NdefRecord.createText(key),
+        ]);
+
+        try {
+          await ndef.write(message);
+          print("Wrote to NFC Tag: $key"); // Debug print
+          NfcManager.instance.stopSession();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Successfully wrote to NFC tag')),
+          );
+        } catch (e) {
+          print("Error writing to NFC tag: $e"); // Debug print
+          NfcManager.instance.stopSession(errorMessage: 'Failed to write to NFC tag');
+        }
+      },
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Tap an NFC tag to write')),
+    );
   }
 
   void _removeCabinet(Cabinet cabinet) async {
@@ -73,7 +251,7 @@ class _CabinetsPageState extends State<CabinetsPage> {
           ),
         ],
       )
-      );
+    );
   }
 
   @override
@@ -132,9 +310,10 @@ class _CabinetsPageState extends State<CabinetsPage> {
 class Cabinet {
   final int id;
   final String name;
+  final String data;
   final List<Item> items = [];
 
-  Cabinet(this.id, this.name);
+  Cabinet(this.id, this.name, this.data);
 }
 
 class Item {
@@ -254,7 +433,7 @@ class AddCabinetDialog extends StatelessWidget {
         ),
         TextButton(
           onPressed: () {
-            onAdd(Cabinet(0, nameController.text));
+            onAdd(Cabinet(0, nameController.text, ''));
             Navigator.pop(context);
           },
           child: const Text('Add'),
