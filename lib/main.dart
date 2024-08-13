@@ -1,14 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'database_helper.dart';
 import 'package:nfc_manager/nfc_manager.dart';
-import 'dart:math';
-import 'package:getwidget/getwidget.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter/cupertino.dart';
 import 'dart:async';
-import 'dart:ui';
-
-
 
 void main() {
   runApp(const CabinetsApp());
@@ -19,18 +12,10 @@ class CabinetsApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        appBarTheme: AppBarTheme(
-          elevation: 0,
-          centerTitle: true,
-        ),
-        cardTheme: CardTheme(
-          elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
+    return CupertinoApp(
+      theme: CupertinoThemeData(
+        primaryColor: CupertinoColors.activeBlue,
+        scaffoldBackgroundColor: CupertinoColors.systemBackground,
       ),
       home: const MainMenu(),
     );
@@ -75,9 +60,11 @@ class _MainMenuState extends State<MainMenu> with WidgetsBindingObserver {
 
   Future<void> _checkNfcAvailability() async {
     bool isAvailable = await NfcManager.instance.isAvailable();
-    setState(() {
-      _nfcAvailable = isAvailable;
-    });
+    if (mounted) {
+      setState(() {
+        _nfcAvailable = isAvailable;
+      });
+    }
   }
 
   Future<void> toggleNfc() async {
@@ -85,7 +72,6 @@ class _MainMenuState extends State<MainMenu> with WidgetsBindingObserver {
       await disableForegroundDispatch();
     } else {
       await enableForegroundDispatch();
-      // Automatically disable NFC after 1 minute
       _nfcTimer = Timer(Duration(minutes: 1), () {
         disableForegroundDispatch();
       });
@@ -98,16 +84,20 @@ class _MainMenuState extends State<MainMenu> with WidgetsBindingObserver {
         _handleTag(tag);
       },
     );
-    setState(() {
-      _nfcActive = true;
-    });
+    if (mounted) {
+      setState(() {
+        _nfcActive = true;
+      });
+    }
   }
 
   Future<void> disableForegroundDispatch() async {
     await NfcManager.instance.stopSession();
-    setState(() {
-      _nfcActive = false;
-    });
+    if (mounted) {
+      setState(() {
+        _nfcActive = false;
+      });
+    }
   }
 
   void _handleTag(NfcTag tag) async {
@@ -117,12 +107,16 @@ class _MainMenuState extends State<MainMenu> with WidgetsBindingObserver {
       return;
     }
 
-    NdefMessage? message = await ndef.read();
-    if (message != null && message.records.isNotEmpty) {
+    NdefMessage message = await ndef.read();
+    if (message.records.isNotEmpty) {
       NdefRecord record = message.records.first;
       String payload = String.fromCharCodes(record.payload).substring(3);
       print("Read NFC Tag: $payload");
-      _openCabinetWithKey(context, payload);
+      if (mounted) {
+        _openCabinetWithKey(context, payload);
+      }
+    } else {
+      print('NDEF message is empty.');
     }
   }
 
@@ -130,111 +124,81 @@ class _MainMenuState extends State<MainMenu> with WidgetsBindingObserver {
     DatabaseHelper dbHelper = DatabaseHelper();
     List<Cabinet> cabinets = await dbHelper.getCabinets();
     
-    print("NFC Tag Key: $key");
-    print("All Cabinets: ${cabinets.map((c) => '${c.id}: ${c.name} (${c.data})')}");
+    Cabinet? cabinetToOpen = cabinets.firstWhere(
+      (cabinet) => cabinet.data == key,
+      orElse: () => Cabinet(-1, '', ''), // Return a dummy cabinet if not found
+    );
 
-    Cabinet? cabinetToOpen;
-    try {
-      cabinetToOpen = cabinets.firstWhere(
-        (cabinet) => cabinet.data == key,
-      );
-    } catch (e) {
-      cabinetToOpen = null;
-    }
-
-    if (cabinetToOpen != null) {
-      print("Opening cabinet: ${cabinetToOpen.id}: ${cabinetToOpen.name} (${cabinetToOpen.data})");
-      Navigator.push(
-        context,
-        CupertinoPageRoute(
-          builder: (context) => ItemsPage(cabinet: cabinetToOpen!),
-        ),
-      );
-    } else {
-      print("No cabinet found with key: $key");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No cabinet found with this NFC tag')),
-      );
+    if (mounted) {
+      if (cabinetToOpen.id != -1) {
+        Navigator.push(
+          context,
+          CupertinoPageRoute(
+            builder: (context) => ItemsPage(cabinet: cabinetToOpen),
+          ),
+        );
+      } else {
+        showCupertinoDialog(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: Text('No Cabinet Found'),
+            content: Text('No cabinet found with this NFC tag'),
+            actions: [
+              CupertinoDialogAction(
+                child: Text('OK'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text('StockStash', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        flexibleSpace: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.blue.withOpacity(0.8),
-                    Colors.blue.withOpacity(0.1),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        middle: Text('StockStash'),
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.blue[300]!, Colors.blue[100]!],
-          ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              CupertinoButton.filled(
+                child: Text('View Cabinets'),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    CupertinoPageRoute(builder: (context) => CabinetsPage()),
+                  );
+                },
+              ),
+              SizedBox(height: 20),
+              if (_nfcAvailable)
                 CupertinoButton(
-                  color: CupertinoColors.white,
-                  child: Text('View Cabinets', style: TextStyle(color: CupertinoColors.activeBlue)),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      CupertinoPageRoute(builder: (context) => CabinetsPage()),
-                    );
-                  },
-                ),
-                SizedBox(height: 20),
-                if (_nfcAvailable)
-                  CupertinoButton(
-                    color: _nfcActive ? CupertinoColors.activeGreen : CupertinoColors.white,
-                    child: Text(
-                      _nfcActive ? 'NFC Active' : 'Activate NFC',
-                      style: TextStyle(color: _nfcActive ? CupertinoColors.white : CupertinoColors.activeBlue),
-                    ),
-                    onPressed: toggleNfc,
-                  )
-                else
-                  Text(
-                    'NFC is not available on this device',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: CupertinoColors.white),
-                  ),
-                SizedBox(height: 20),
+                  color: _nfcActive ? CupertinoColors.activeGreen : CupertinoColors.activeBlue,
+                  child: Text(_nfcActive ? 'NFC Active' : 'Activate NFC'),
+                  onPressed: toggleNfc,
+                )
+              else
                 Text(
-                  _nfcActive 
-                      ? 'NFC is active. Tap an NFC tag to read.\nNFC will deactivate automatically after 1 minute.' 
-                      : 'Tap the button above to activate NFC for 1 minute.',
+                  'NFC is not available on this device',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: CupertinoColors.white),
+                  style: TextStyle(color: CupertinoColors.secondaryLabel),
                 ),
-              ],
-            ),
+              SizedBox(height: 20), 
+              Text(
+                _nfcActive 
+                    ? 'NFC is active. Tap an NFC tag to read.\nNFC will deactivate automatically after 1 minute.' 
+                    : 'Tap the button above to activate NFC for 1 minute.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: CupertinoColors.secondaryLabel),
+              ),
+            ],
           ),
         ),
       ),
@@ -281,28 +245,21 @@ class _CabinetsPageState extends State<CabinetsPage> {
   }
 
   Future<void> _showRemoveConfirmationDialog(BuildContext context, Cabinet cabinet) async {
-    return showDialog<void>(
+    return showCupertinoDialog<void>(
       context: context,
-      barrierDismissible: false, // user must tap button!
       builder: (BuildContext context) {
-        return AlertDialog(
+        return CupertinoAlertDialog(
           title: Text('Remove Cabinet'),
-          content: SingleChildScrollView(
-            child: ListBody(
-              children: <Widget>[
-                Text('Are you sure you want to remove "${cabinet.name}"?'),
-                Text('This action cannot be undone.'),
-              ],
-            ),
-          ),
+          content: Text('Are you sure you want to remove "${cabinet.name}"? This action cannot be undone.'),
           actions: <Widget>[
-            TextButton(
+            CupertinoDialogAction(
               child: Text('Cancel'),
               onPressed: () {
                 Navigator.of(context).pop();
               },
             ),
-            TextButton(
+            CupertinoDialogAction(
+              isDestructiveAction: true,
               child: Text('Remove'),
               onPressed: () {
                 Navigator.of(context).pop();
@@ -317,73 +274,73 @@ class _CabinetsPageState extends State<CabinetsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        leading: Icon(Icons.warehouse, color: Colors.white),
-        title: const Text('StockStash', style: TextStyle(color: Colors.white)),
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Colors.blue[700]!, Colors.blue[500]!],
-            ),
-          ),
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        middle: Text('Cabinets'),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          child: Icon(CupertinoIcons.add),
+          onPressed: () {
+            showCupertinoDialog(
+              context: context,
+              builder: (context) => AddCabinetDialog(onAdd: _addCabinet),
+            );
+          },
         ),
       ),
-      body: GridView.builder(
-        padding: EdgeInsets.all(16),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-        ),
-        itemCount: _cabinets.length,
-        itemBuilder: (context, index) {
-          var cabinet = _cabinets[index];
-          return GestureDetector(
-            onLongPress: () => _showRemoveConfirmationDialog(context, cabinet),
-            child: Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ItemsPage(cabinet: cabinet),
+      child: SafeArea(
+        child: GridView.builder(
+          padding: EdgeInsets.all(16),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+          ),
+          itemCount: _cabinets.length,
+          itemBuilder: (context, index) {
+            var cabinet = _cabinets[index];
+            return GestureDetector(
+              onLongPress: () => _showRemoveConfirmationDialog(context, cabinet),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: CupertinoColors.systemBackground,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: CupertinoColors.systemGrey.withOpacity(0.2),
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
                     ),
-                  ).then((_) => _loadCabinets());
-                },
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.storage, size: 48, color: Colors.blue),
-                    SizedBox(height: 8),
-                    Text(
-                      cabinet.name,
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center,
-                    ),
-                    SizedBox(height: 8),
-                    Text('${cabinet.items.length} items'),
                   ],
                 ),
+                child: CupertinoButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (context) => ItemsPage(cabinet: cabinet),
+                      ),
+                    ).then((_) => _loadCabinets());
+                  },
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(CupertinoIcons.archivebox, size: 48, color: CupertinoColors.activeBlue),
+                      SizedBox(height: 8),
+                      Text(
+                        cabinet.name,
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 8),
+                      Text('${cabinet.items.length} items'),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          showDialog(
-            context: context,
-            builder: (context) => AddCabinetDialog(onAdd: _addCabinet),
-          );
-        },
-        icon: Icon(Icons.add),
-        label: Text('Add Cabinet'),
-        backgroundColor: Colors.blue[700],
+            );
+          },
+        ),
       ),
     );
   }
@@ -456,28 +413,21 @@ class _ItemsPageState extends State<ItemsPage> {
   }
 
   Future<void> _showRemoveConfirmationDialog(BuildContext context, Item item) async {
-    return showDialog<void>(
+    return showCupertinoDialog<void>(
       context: context,
-      barrierDismissible: false, // user must tap button!
       builder: (BuildContext context) {
-        return AlertDialog(
+        return CupertinoAlertDialog(
           title: Text('Remove Item'),
-          content: SingleChildScrollView(
-            child: ListBody(
-              children: <Widget>[
-                Text('Are you sure you want to remove "${item.name}"?'),
-                Text('This action cannot be undone.'),
-              ],
-            ),
-          ),
+          content: Text('Are you sure you want to remove "${item.name}"? This action cannot be undone.'),
           actions: <Widget>[
-            TextButton(
+            CupertinoDialogAction(
               child: Text('Cancel'),
               onPressed: () {
                 Navigator.of(context).pop();
               },
             ),
-            TextButton(
+            CupertinoDialogAction(
+              isDestructiveAction: true,
               child: Text('Remove'),
               onPressed: () {
                 Navigator.of(context).pop();
@@ -492,146 +442,291 @@ class _ItemsPageState extends State<ItemsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.cabinet.name, style: TextStyle(color: Colors.white)),
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Colors.blue[700]!, Colors.blue[500]!],
-            ),
-          ),
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        middle: Text(widget.cabinet.name),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          child: Icon(CupertinoIcons.add),
+          onPressed: () {
+            showCupertinoDialog(
+              context: context,
+              builder: (context) => AddItemDialog(onAdd: _addItem),
+            );
+          },
         ),
       ),
-      body: ListView.builder(
-        padding: EdgeInsets.all(16),
-        itemCount: _items.length,
-        itemBuilder: (context, index) {
-          var item = _items[index];
-          return GestureDetector(
-            onLongPress: () => _showRemoveConfirmationDialog(context, item),
-            child: Card(
-              margin: EdgeInsets.only(bottom: 16),
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              child: ListTile(
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                title: Text(
-                  item.name,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      child: SafeArea(
+        child: ListView.separated(
+          padding: EdgeInsets.all(16),
+          itemCount: _items.length,
+          separatorBuilder: (context, index) => Container(
+            height: 1,
+            color: CupertinoColors.separator,
+          ),
+          itemBuilder: (context, index) {
+            var item = _items[index];
+            return GestureDetector(
+              onLongPress: () => _showRemoveConfirmationDialog(context, item),
+              child: Dismissible(
+                key: Key(item.id.toString()),
+                direction: DismissDirection.endToStart,
+                confirmDismiss: (direction) async {
+                  return await showCupertinoDialog<bool>(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return CupertinoAlertDialog(
+                        title: Text('Delete Item'),
+                        content: Text('Are you sure you want to delete "${item.name}"?'),
+                        actions: <Widget>[
+                          CupertinoDialogAction(
+                            child: Text('Cancel'),
+                            onPressed: () => Navigator.of(context).pop(false),
+                          ),
+                          CupertinoDialogAction(
+                            isDestructiveAction: true,
+                            child: Text('Delete'),
+                            onPressed: () => Navigator.of(context).pop(true),
+                          ),
+                        ],
+                      );
+                    },
+                  ) ?? false;
+                },
+                onDismissed: (direction) {
+                  _removeItem(item);
+                },
+                background: Container(
+                  alignment: Alignment.centerRight,
+                  padding: EdgeInsets.only(right: 20.0),
+                  color: CupertinoColors.destructiveRed,
+                  child: Icon(CupertinoIcons.delete, color: CupertinoColors.white),
                 ),
-                subtitle: Text(
-                  'Quantity: ${item.count}',
-                  style: TextStyle(fontSize: 16),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: Icon(Icons.remove_circle_outline, color: Colors.red),
-                      onPressed: () => _updateItemCount(item, -1),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.add_circle_outline, color: Colors.green),
-                      onPressed: () => _updateItemCount(item, 1),
-                    ),
-                  ],
+                child: Container(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.name,
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Quantity: ${item.count}',
+                              style: TextStyle(fontSize: 16, color: CupertinoColors.secondaryLabel),
+                            ),
+                          ],
+                        ),
+                      ),
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        child: Icon(CupertinoIcons.minus_circle, color: CupertinoColors.destructiveRed),
+                        onPressed: () => _updateItemCount(item, -1),
+                      ),
+                      SizedBox(width: 8),
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        child: Icon(CupertinoIcons.plus_circle, color: CupertinoColors.activeGreen),
+                        onPressed: () => _updateItemCount(item, 1),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          showDialog(
-            context: context,
-            builder: (context) => AddItemDialog(onAdd: _addItem),
-          );
-        },
-        icon: Icon(Icons.add),
-        label: Text('Add Item'),
-        backgroundColor: Colors.blue[700],
+            );
+          },
+        ),
       ),
     );
   }
 }
 
-class AddCabinetDialog extends StatelessWidget {
+class AddCabinetDialog extends StatefulWidget {
   final Function(Cabinet) onAdd;
 
   const AddCabinetDialog({super.key, required this.onAdd});
 
   @override
-  Widget build(BuildContext context) {
-    TextEditingController nameController = TextEditingController();
+  State<AddCabinetDialog> createState() => _AddCabinetDialogState();
+}
 
-    return AlertDialog(
-      title: const Text('Add Cabinet'),
-      content: TextField(
-        controller: nameController,
-        decoration: const InputDecoration(labelText: 'Name'),
+class _AddCabinetDialogState extends State<AddCabinetDialog> {
+  final TextEditingController nameController = TextEditingController();
+  bool isWritingNFC = false;
+  String nfcStatus = '';
+
+  Future<void> writeNFC(String cabinetName) async {
+    if (!mounted) return;
+
+    setState(() {
+      isWritingNFC = true;
+      nfcStatus = 'Tap an NFC tag to write...';
+    });
+
+    try {
+      bool isAvailable = await NfcManager.instance.isAvailable();
+      if (!isAvailable) {
+        throw 'NFC not available on this device.';
+      }
+
+      await NfcManager.instance.startSession(
+        onDiscovered: (NfcTag tag) async {
+          var ndef = Ndef.from(tag);
+          if (ndef == null) {
+            throw 'Tag is not NDEF compatible.';
+          }
+
+          if (!ndef.isWritable) {
+            throw 'Tag is not writable.';
+          }
+
+          NdefMessage message = NdefMessage([
+            NdefRecord.createText(cabinetName),
+          ]);
+
+          try {
+            if (!mounted) return;
+            setState(() {
+              nfcStatus = 'Writing to NFC tag...';
+            });
+            await ndef.write(message);
+            if (!mounted) return;
+            setState(() {
+              nfcStatus = 'Successfully written to NFC tag!';
+            });
+            // Successfully written, now add the cabinet
+            String nfcData = cabinetName; // You might want to use a more unique identifier
+            widget.onAdd(Cabinet(0, cabinetName, nfcData));
+            await Future.delayed(Duration(seconds: 1)); // Show success message briefly
+            if (!mounted) return;
+            Navigator.pop(context);
+          } catch (e) {
+            throw 'Failed to write to tag: $e';
+          } finally {
+            NfcManager.instance.stopSession();
+          }
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        nfcStatus = 'Error: ${e.toString()}';
+        isWritingNFC = false;
+      });
+    }
+  }
+
+  void addCabinetWithoutNFC() {
+    if (nameController.text.isNotEmpty) {
+      widget.onAdd(Cabinet(0, nameController.text, ''));
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoAlertDialog(
+      title: Text('Add Cabinet'),
+      content: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: CupertinoTextField(
+              controller: nameController,
+              placeholder: 'Cabinet Name',
+              autofocus: true,
+            ),
+          ),
+          if (isWritingNFC) 
+            Column(
+              children: [
+                CupertinoActivityIndicator(),
+                SizedBox(height: 8),
+                Text(nfcStatus),
+              ],
+            ),
+        ],
       ),
       actions: [
-        TextButton(
+        CupertinoDialogAction(
+          child: Text('Cancel'),
           onPressed: () {
             Navigator.pop(context);
           },
-          child: const Text('Cancel'),
         ),
-        TextButton(
-          onPressed: () {
-            onAdd(Cabinet(0, nameController.text, ''));
-            Navigator.pop(context);
-          },
-          child: const Text('Add'),
-        ),
+        if (!isWritingNFC)
+          CupertinoDialogAction(
+            child: Text('Add with NFC'),
+            onPressed: () {
+              if (nameController.text.isNotEmpty) {
+                writeNFC(nameController.text);
+              }
+            },
+          ),
+        if (!isWritingNFC)
+          CupertinoDialogAction(
+            child: Text('Add without NFC'),
+            onPressed: addCabinetWithoutNFC,
+          ),
       ],
     );
   }
 }
 
-class AddItemDialog extends StatelessWidget {
+class AddItemDialog extends StatefulWidget {
   final Function(String, int) onAdd;
 
   const AddItemDialog({super.key, required this.onAdd});
 
   @override
-  Widget build(BuildContext context) {
-    TextEditingController nameController = TextEditingController();
-    TextEditingController countController = TextEditingController(text: '1');
+  State<AddItemDialog> createState() => _AddItemDialogState();
+}
 
-    return AlertDialog(
-      title: const Text('Add Item'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: nameController,
-            decoration: const InputDecoration(labelText: 'Name'),
-          ),
-          TextField(
-            controller: countController,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Count'),
-          ),
-        ],
+class _AddItemDialogState extends State<AddItemDialog> {
+  final TextEditingController nameController = TextEditingController();
+  final TextEditingController countController = TextEditingController(text: '1');
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoAlertDialog(
+      title: Text('Add Item'),
+      content: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16.0),
+        child: Column(
+          children: [
+            CupertinoTextField(
+              controller: nameController,
+              placeholder: 'Item Name',
+              autofocus: true,
+            ),
+            SizedBox(height: 8),
+            CupertinoTextField(
+              controller: countController,
+              placeholder: 'Count',
+              keyboardType: TextInputType.number,
+            ),
+          ],
+        ),
       ),
       actions: [
-        TextButton(
+        CupertinoDialogAction(
+          child: Text('Cancel'),
           onPressed: () {
             Navigator.pop(context);
           },
-          child: const Text('Cancel'),
         ),
-        TextButton(
+        CupertinoDialogAction(
+          child: Text('Add'),
           onPressed: () {
-            onAdd(nameController.text, int.parse(countController.text));
-            Navigator.pop(context);
+            if (nameController.text.isNotEmpty && countController.text.isNotEmpty) {
+              widget.onAdd(nameController.text, int.parse(countController.text));
+              Navigator.pop(context);
+            }
           },
-          child: const Text('Add'),
         ),
       ],
     );
