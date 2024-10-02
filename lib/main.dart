@@ -12,12 +12,12 @@ class CabinetsApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoApp(
+    return const CupertinoApp(
       theme: CupertinoThemeData(
         primaryColor: CupertinoColors.activeBlue,
         scaffoldBackgroundColor: CupertinoColors.systemBackground,
       ),
-      home: const MainMenu(),
+      home: MainMenu(),
     );
   }
 }
@@ -129,30 +129,34 @@ class _MainMenuState extends State<MainMenu> with WidgetsBindingObserver {
       orElse: () => Cabinet(-1, '', ''), // Return a dummy cabinet if not found
     );
 
-    if (mounted) {
-      if (cabinetToOpen.id != -1) {
-        Navigator.push(
-          context,
-          CupertinoPageRoute(
-            builder: (context) => ItemsPage(cabinet: cabinetToOpen),
-          ),
-        );
-      } else {
-        showCupertinoDialog(
-          context: context,
-          builder: (context) => CupertinoAlertDialog(
-            title: Text('No Cabinet Found'),
-            content: Text('No cabinet found with this NFC tag'),
-            actions: [
-              CupertinoDialogAction(
-                child: Text('OK'),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        );
-      }
+    if (!mounted) return;
+
+    if (cabinetToOpen.id != -1) {
+      Navigator.push(
+        context,
+        CupertinoPageRoute(
+          builder: (context) => ItemsPage(cabinet: cabinetToOpen),
+        ),
+      );
+    } else {
+      _showNoCabinetFoundDialog(context);
     }
+  }
+
+  void _showNoCabinetFoundDialog(BuildContext context) {
+    showCupertinoDialog(
+      context: context,
+      builder: (BuildContext dialogContext) => CupertinoAlertDialog(
+        title: Text('No Cabinet Found'),
+        content: Text('No cabinet found with this NFC tag'),
+        actions: [
+          CupertinoDialogAction(
+            child: Text('OK'),
+            onPressed: () => Navigator.pop(dialogContext),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -185,12 +189,12 @@ class _MainMenuState extends State<MainMenu> with WidgetsBindingObserver {
                   onPressed: toggleNfc,
                 )
               else
-                Text(
+                const Text(
                   'NFC is not available on this device',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: CupertinoColors.secondaryLabel),
                 ),
-              SizedBox(height: 20), 
+              const SizedBox(height: 20), 
               Text(
                 _nfcActive 
                     ? 'NFC is active. Tap an NFC tag to read.\nNFC will deactivate automatically after 1 minute.' 
@@ -216,17 +220,36 @@ class CabinetsPage extends StatefulWidget {
 class _CabinetsPageState extends State<CabinetsPage> {
   final DatabaseHelper dbHelper = DatabaseHelper();
   List<Cabinet> _cabinets = [];
+  List<Cabinet> _filteredCabinets = [];
+  TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadCabinets();
+    _searchController.addListener(_filterCabinets);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _loadCabinets() async {
     List<Cabinet> cabinets = await dbHelper.getCabinets();
     setState(() {
       _cabinets = cabinets;
+      _filteredCabinets = cabinets;
+    });
+  }
+
+  void _filterCabinets() {
+    String searchTerm = _searchController.text.toLowerCase();
+    setState(() {
+      _filteredCabinets = _cabinets
+          .where((cabinet) => cabinet.name.toLowerCase().contains(searchTerm))
+          .toList();
     });
   }
 
@@ -289,57 +312,88 @@ class _CabinetsPageState extends State<CabinetsPage> {
         ),
       ),
       child: SafeArea(
-        child: GridView.builder(
-          padding: EdgeInsets.all(16),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-          ),
-          itemCount: _cabinets.length,
-          itemBuilder: (context, index) {
-            var cabinet = _cabinets[index];
-            return GestureDetector(
-              onLongPress: () => _showRemoveConfirmationDialog(context, cabinet),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: CupertinoColors.systemBackground,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: CupertinoColors.systemGrey.withOpacity(0.2),
-                      blurRadius: 4,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: CupertinoButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      CupertinoPageRoute(
-                        builder: (context) => ItemsPage(cabinet: cabinet),
-                      ),
-                    ).then((_) => _loadCabinets());
-                  },
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(CupertinoIcons.archivebox, size: 48, color: CupertinoColors.activeBlue),
-                      SizedBox(height: 8),
-                      Text(
-                        cabinet.name,
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.center,
-                      ),
-                      SizedBox(height: 8),
-                      Text('${cabinet.items.length} items'),
-                    ],
-                  ),
-                ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: CupertinoSearchTextField(
+                controller: _searchController,
+                placeholder: 'Search cabinets',
               ),
-            );
-          },
+            ),
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.all(16),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                ),
+                itemCount: _filteredCabinets.length,
+                itemBuilder: (context, index) {
+                  var cabinet = _filteredCabinets[index];
+                  return CabinetTile(
+                    cabinet: cabinet,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        ZoomPageRoute(
+                          page: ItemsPage(cabinet: cabinet),
+                        ),
+                      ).then((_) => _loadCabinets());
+                    },
+                    onLongPress: () => _showRemoveConfirmationDialog(context, cabinet),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Create a separate stateless widget for cabinet tiles
+class CabinetTile extends StatelessWidget {
+  final Cabinet cabinet;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  const CabinetTile({Key? key, required this.cabinet, required this.onTap, required this.onLongPress}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPress: onLongPress,
+      child: Container(
+        decoration: BoxDecoration(
+          color: CupertinoColors.systemBackground,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: CupertinoColors.systemGrey.withOpacity(0.2),
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: CupertinoButton(
+          onPressed: onTap,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(CupertinoIcons.archivebox, size: 48, color: CupertinoColors.activeBlue),
+              SizedBox(height: 8),
+              Text(
+                cabinet.name,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 8),
+              Text('${cabinet.items.length} items'),
+            ],
+          ),
         ),
       ),
     );
@@ -375,11 +429,30 @@ class ItemsPage extends StatefulWidget {
 class _ItemsPageState extends State<ItemsPage> {
   final DatabaseHelper dbHelper = DatabaseHelper();
   late List<Item> _items;
+  late List<Item> _filteredItems;
+  TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _items = List.from(widget.cabinet.items);
+    _filteredItems = _items;
+    _searchController.addListener(_filterItems);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _filterItems() {
+    String searchTerm = _searchController.text.toLowerCase();
+    setState(() {
+      _filteredItems = _items
+          .where((item) => item.name.toLowerCase().contains(searchTerm))
+          .toList();
+    });
   }
 
   void _addItem(String name, int count) async {
@@ -387,6 +460,7 @@ class _ItemsPageState extends State<ItemsPage> {
     int id = await dbHelper.insertItem(newItem, widget.cabinet.id);
     setState(() {
       _items.add(Item(id, name, count));
+      _filterItems();
     });
   }
 
@@ -457,88 +531,114 @@ class _ItemsPageState extends State<ItemsPage> {
         ),
       ),
       child: SafeArea(
-        child: ListView.separated(
-          padding: EdgeInsets.all(16),
-          itemCount: _items.length,
-          separatorBuilder: (context, index) => Container(
-            height: 1,
-            color: CupertinoColors.separator,
-          ),
-          itemBuilder: (context, index) {
-            var item = _items[index];
-            return GestureDetector(
-              onLongPress: () => _showRemoveConfirmationDialog(context, item),
-              child: Dismissible(
-                key: Key(item.id.toString()),
-                direction: DismissDirection.endToStart,
-                confirmDismiss: (direction) async {
-                  return await showCupertinoDialog<bool>(
-                    context: context,
-                    builder: (BuildContext context) {
-                      return CupertinoAlertDialog(
-                        title: Text('Delete Item'),
-                        content: Text('Are you sure you want to delete "${item.name}"?'),
-                        actions: <Widget>[
-                          CupertinoDialogAction(
-                            child: Text('Cancel'),
-                            onPressed: () => Navigator.of(context).pop(false),
-                          ),
-                          CupertinoDialogAction(
-                            isDestructiveAction: true,
-                            child: Text('Delete'),
-                            onPressed: () => Navigator.of(context).pop(true),
-                          ),
-                        ],
-                      );
-                    },
-                  ) ?? false;
-                },
-                onDismissed: (direction) {
-                  _removeItem(item);
-                },
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: EdgeInsets.only(right: 20.0),
-                  color: CupertinoColors.destructiveRed,
-                  child: Icon(CupertinoIcons.delete, color: CupertinoColors.white),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: CupertinoSearchTextField(
+                controller: _searchController,
+                placeholder: 'Search items',
+              ),
+            ),
+            Expanded(
+              child: ListView.separated(
+                itemCount: _filteredItems.length,
+                separatorBuilder: (context, index) => Container(
+                  height: 1,
+                  color: CupertinoColors.separator,
                 ),
-                child: Container(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.name,
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Quantity: ${item.count}',
-                              style: TextStyle(fontSize: 16, color: CupertinoColors.secondaryLabel),
-                            ),
-                          ],
-                        ),
-                      ),
-                      CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        child: Icon(CupertinoIcons.minus_circle, color: CupertinoColors.destructiveRed),
-                        onPressed: () => _updateItemCount(item, -1),
-                      ),
-                      SizedBox(width: 8),
-                      CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        child: Icon(CupertinoIcons.plus_circle, color: CupertinoColors.activeGreen),
-                        onPressed: () => _updateItemCount(item, 1),
-                      ),
-                    ],
+                itemBuilder: (context, index) {
+                  var item = _filteredItems[index];
+                  return ItemTile(item: item, onUpdate: _updateItemCount, onRemove: _removeItem);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Create a separate stateless widget for item tiles
+class ItemTile extends StatelessWidget {
+  final Item item;
+  final Function(Item, int) onUpdate;
+  final Function(Item) onRemove;
+
+  const ItemTile({Key? key, required this.item, required this.onUpdate, required this.onRemove}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPress: () => onRemove(item),
+      child: Dismissible(
+        key: Key(item.id.toString()),
+        direction: DismissDirection.endToStart,
+        confirmDismiss: (direction) async {
+          return await showCupertinoDialog<bool>(
+            context: context,
+            builder: (BuildContext context) {
+              return CupertinoAlertDialog(
+                title: Text('Delete Item'),
+                content: Text('Are you sure you want to delete "${item.name}"?'),
+                actions: <Widget>[
+                  CupertinoDialogAction(
+                    child: Text('Cancel'),
+                    onPressed: () => Navigator.of(context).pop(false),
                   ),
+                  CupertinoDialogAction(
+                    isDestructiveAction: true,
+                    child: Text('Delete'),
+                    onPressed: () => Navigator.of(context).pop(true),
+                  ),
+                ],
+              );
+            },
+          ) ?? false;
+        },
+        onDismissed: (direction) {
+          onRemove(item);
+        },
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: EdgeInsets.only(right: 20.0),
+          color: CupertinoColors.destructiveRed,
+          child: Icon(CupertinoIcons.delete, color: CupertinoColors.white),
+        ),
+        child: Container(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.name,
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Quantity: ${item.count}',
+                      style: TextStyle(fontSize: 16, color: CupertinoColors.secondaryLabel),
+                    ),
+                  ],
                 ),
               ),
-            );
-          },
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                child: Icon(CupertinoIcons.minus_circle, color: CupertinoColors.destructiveRed),
+                onPressed: () => onUpdate(item, -1),
+              ),
+              SizedBox(width: 8),
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                child: Icon(CupertinoIcons.plus_circle, color: CupertinoColors.activeGreen),
+                onPressed: () => onUpdate(item, 1),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -560,8 +660,6 @@ class _AddCabinetDialogState extends State<AddCabinetDialog> {
   String nfcStatus = '';
 
   Future<void> writeNFC(String cabinetName) async {
-    if (!mounted) return;
-
     setState(() {
       isWritingNFC = true;
       nfcStatus = 'Tap an NFC tag to write...';
@@ -603,7 +701,7 @@ class _AddCabinetDialogState extends State<AddCabinetDialog> {
             widget.onAdd(Cabinet(0, cabinetName, nfcData));
             await Future.delayed(Duration(seconds: 1)); // Show success message briefly
             if (!mounted) return;
-            Navigator.pop(context);
+            Navigator.of(context).pop();
           } catch (e) {
             throw 'Failed to write to tag: $e';
           } finally {
@@ -731,4 +829,29 @@ class _AddItemDialogState extends State<AddItemDialog> {
       ],
     );
   }
+}
+
+class ZoomPageRoute extends PageRouteBuilder {
+  final Widget page;
+
+  ZoomPageRoute({required this.page})
+      : super(
+          pageBuilder: (context, animation, secondaryAnimation) => page,
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            var begin = 0.0;
+            var end = 1.0;
+            var curve = Curves.ease;
+
+            var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+            var scaleAnimation = animation.drive(tween);
+
+            return ScaleTransition(
+              scale: scaleAnimation,
+              child: FadeTransition(
+                opacity: animation,
+                child: child,
+              ),
+            );
+          },
+        );
 }

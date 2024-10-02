@@ -82,7 +82,8 @@ class DatabaseHelper {
       List<Item> items = itemMaps
           .map((itemMap) => Item(itemMap['id'], itemMap['name'], itemMap['count']))
           .toList();
-      Cabinet cabinet = Cabinet(map['id'], map['name'], map['data']);
+      // Use null-aware operator to provide a default empty string if data is null
+      Cabinet cabinet = Cabinet(map['id'], map['name'], map['data'] ?? '');
       cabinet.items.addAll(items);
       cabinets.add(cabinet);
     }
@@ -113,5 +114,47 @@ class DatabaseHelper {
   Future<int> removeItem(int id) async {
     final db = await database;
     return await db.delete('items', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<List<Cabinet>> searchCabinets(String searchTerm) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'cabinets',
+      where: 'name LIKE ?',
+      whereArgs: ['%$searchTerm%'],
+    );
+
+    List<Cabinet> cabinets = [];
+    for (var map in maps) {
+      List<Map<String, dynamic>> itemMaps = await db.query(
+        'items',
+        where: 'cabinet_id = ?',
+        whereArgs: [map['id']],
+      );
+      List<Item> items = itemMaps
+          .map((itemMap) => Item(itemMap['id'], itemMap['name'], itemMap['count']))
+          .toList();
+      Cabinet cabinet = Cabinet(map['id'], map['name'], map['data']);
+      cabinet.items.addAll(items);
+      cabinets.add(cabinet);
+    }
+    return cabinets;
+  }
+
+  Future<List<Item>> searchItems(int cabinetId, String searchTerm) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'items',
+      where: 'cabinet_id = ? AND name LIKE ?',
+      whereArgs: [cabinetId, '%$searchTerm%'],
+    );
+
+    return List.generate(maps.length, (i) {
+      return Item(
+        maps[i]['id'],
+        maps[i]['name'],
+        maps[i]['count'],
+      );
+    });
   }
 }
